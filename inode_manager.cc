@@ -121,7 +121,14 @@ inode_manager::free_inode(uint32_t inum)
    * note: you need to check if the inode is already a freed one;
    * if not, clear it, and remember to write back to disk.
    */
-
+  struct inode* target = get_inode(inum);
+  if (target->type == 0) {
+    // Already be freed
+    return;
+  }
+  target->type = 0;
+  put_inode(inum, target);
+  free_inode_num.insert(inum);
   return;
 }
 
@@ -248,6 +255,20 @@ inode_manager::get_datablock(struct inode* inode, int inode_blocks_index, char* 
   }
 }
 
+uint32_t
+inode_manager::get_datablock_number(struct inode* inode, int inode_blocks_index) {
+  if (inode_blocks_index >= 0 && inode_blocks_index < NDIRECT) {
+    return inode->blocks[inode_blocks_index];
+  } else if (inode_blocks_index >= NDIRECT && inode_blocks_index < NDIRECT + NINDIRECT) {
+    char local_buf[BLOCK_SIZE];
+    bm->read_block(inode->blocks[NDIRECT], local_buf);
+    uint32_t* indirect_block_number = (uint32_t*) local_buf;
+    inode_blocks_index -= NDIRECT;
+    return indirect_block_number[inode_blocks_index];
+  }
+  return -1;
+}
+
 /* alloc/free blocks if needed */
 void
 inode_manager::write_file(uint32_t inum, const char *buf, int size)
@@ -258,7 +279,80 @@ inode_manager::write_file(uint32_t inum, const char *buf, int size)
    * you need to consider the situation when the size of buf 
    * is larger or smaller than the size of original inode
    */
-  
+  struct inode* target = get_inode(inum);
+  if (target == NULL)
+    return;
+  unsigned int original_size = target->size;
+
+  int inode_blocks_index = 0;
+  unsigned int current_size = 0;
+
+  // int round_up_size = (size/BLOCK_SIZE + 1) * BLOCK_SIZE;
+  int round_up_size = ((size + BLOCK_SIZE - 1) / BLOCK_SIZE) * BLOCK_SIZE;
+  char local_file_buf[round_up_size];
+  memcpy(local_file_buf, buf, size);
+
+  // free all the blocks of the original file
+  while (current_size < original_size) {
+    uint32_t data_block_number = get_datablock_number(target, inode_blocks_index);
+    bm->free_block(data_block_number);
+    current_size += BLOCK_SIZE;
+    inode_blocks_index++;
+  }
+
+  // free the indirect block if necessary
+  if (original_size > NDIRECT * BLOCK_SIZE) {
+    uint32_t indirect_block_number = target->blocks[NDIRECT];
+    bm->free_block(indirect_block_number);
+  }
+
+  // allocate new blocks for the new file
+  inode_blocks_index = 0;
+  current_size = 0;
+  target->atime = time(NULL);
+  target->ctime = time(NULL);
+  target->mtime = time(NULL);
+  target->size = size;
+  while (current_size < round_up_size) {
+    if (inode_blocks_index < NDIRECT) {
+      uint32_t block_index = bm->alloc_block();
+      bm->write_block(block_index, local_file_buf + inode_blocks_index * BLOCK_SIZE);
+      target->blocks[inode_blocks_index] = block_index;
+      inode_blocks_index++;
+      current_size += BLOCK_SIZE;
+      continue;
+    }
+    if (inode_blocks_index == NDIRECT) {
+      uint32_t local_buf[NINDIRECT] = { 0 };
+      uint32_t block_index_for_indirect_block = bm->alloc_block();
+      target->blocks[NDIRECT] = block_index_for_indirect_block;
+      uint32_t data_block_index = bm->alloc_block();
+      bm->write_block(data_block_index, local_file_buf + inode_blocks_index * BLOCK_SIZE);
+      local_buf[0] = data_block_index;
+      bm->write_block(block_index_for_indirect_block, (const char*)local_buf);
+      inode_blocks_index++;
+      current_size += BLOCK_SIZE;
+      continue;
+    }
+    if (inode_blocks_index > NDIRECT) {
+      uint32_t local_buf[NINDIRECT];
+      bm->read_block(target->blocks[NDIRECT], (char*)local_buf);
+      uint32_t data_block_index = bm->alloc_block();
+      bm->write_block(data_block_index, local_file_buf + inode_blocks_index * BLOCK_SIZE);
+      local_buf[inode_blocks_index - NDIRECT] = data_block_index;
+      bm->write_block(target->blocks[NDIRECT], (const char*)local_buf);
+      inode_blocks_index++;
+      current_size += BLOCK_SIZE;
+      continue;
+    }
+  }
+  // TODO: delete this
+  if (current_size != round_up_size) {
+    std::cout << "Error in inode_manager::write_file" << std::endl;
+    exit(1);
+  }
+
+  put_inode(inum, target);
   return;
 }
 
@@ -288,6 +382,26 @@ inode_manager::remove_file(uint32_t inum)
    * your code goes here
    * note: you need to consider about both the data block and inode of the file
    */
-  
+  struct inode* target = get_inode(inum);
+  unsigned int original_size = target->size;
+
+  int inode_blocks_index = 0;
+  unsigned int current_size = 0;
+
+  // free all the data blocks
+  while (current_size < original_size) {
+    uint32_t data_block_number = get_datablock_number(target, inode_blocks_index);
+    bm->free_block(data_block_number);
+    current_size += BLOCK_SIZE;
+    inode_blocks_index++;
+  }
+
+  // free the indirect block if necessary
+  if (original_size > NDIRECT * BLOCK_SIZE) {
+    uint32_t indirect_block_number = target->blocks[NDIRECT];
+    bm->free_block(indirect_block_number);
+  }
+
+  free_inode(inum);
   return;
 }

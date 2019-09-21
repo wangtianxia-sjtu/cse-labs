@@ -87,6 +87,7 @@ class inode_manager {
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
   void get_datablock(struct inode* inode, int inode_blocks_index, char* buf);
+  uint32_t get_datablock_number(struct inode* inode, int inode_blocks_index);
 
  public:
   inode_manager();
