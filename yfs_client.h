@@ -34,6 +34,8 @@ class yfs_client {
  private:
   static std::string filename(inum);
   static inum n2i(std::string);
+  int directory2list(std::string &data, std::list<dirent> &result);
+  int list2directory(std::string &data, std::list<dirent> &result);
 
  public:
   yfs_client();

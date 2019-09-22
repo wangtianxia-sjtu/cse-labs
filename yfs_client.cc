@@ -110,6 +110,75 @@ release:
     return r;
 }
 
+int
+yfs_client::directory2list(std::string &data, std::list<dirent> &result) {
+    int r = OK;
+    std::string data_copy = data;
+    if (data == "")
+        return OK;
+    while (true) {
+
+        // retrieve the first sizeof(int) characters in data_copy and convert to int
+        char int_buf[sizeof(int)];
+        for (unsigned long long i = 0; i < sizeof(int); ++i) {
+            int_buf[i] = data_copy[i];
+        }
+        int entry_length = *(int *)int_buf;
+        // std::cout << "entry_length: " << entry_length << std::endl;
+        if (entry_length == 0)
+            break;
+
+        // retrieve the entry name
+        std::string name;
+        int name_length = entry_length - sizeof(int) - sizeof(unsigned long long);
+        for (unsigned long long i = sizeof(int); i < sizeof(int) + name_length; ++i) {
+            name.push_back(data_copy[i]);
+        }
+
+        // retrieve the inum
+        char inum_buf[sizeof(unsigned long long)];
+        unsigned long long inum_offset = sizeof(int) + name_length;
+        for (unsigned long long i = inum_offset; i < inum_offset + sizeof(unsigned long long); ++i) {
+            inum_buf[i - inum_offset] = data_copy[i];
+        }
+        unsigned long long inum = *(unsigned long long*)inum_buf;
+        // std::cout << "inum: " << inum << std::endl;
+        dirent d;
+        d.name = name;
+        d.inum = inum;
+        result.push_back(d);
+        data_copy = data_copy.substr(entry_length);
+    }
+    return r;
+}
+
+int
+yfs_client::list2directory(std::string &data, std::list<dirent> &result) {
+    for (std::list<dirent>::iterator it = result.begin(); it != result.end(); ++it) {
+        struct dirent d = *it;
+        int length = sizeof(int) + d.name.size() + sizeof(unsigned long long);
+        char* length_p = (char*) &length;
+        for (unsigned long long j = 0; j < sizeof(int); ++j) {
+            data.push_back(length_p[j]);
+        }
+        for (int j = 0; j < d.name.size(); ++j) {
+            data.push_back(d.name[j]);
+        }
+        unsigned long long inum = d.inum;
+        char* inum_p = (char*) &inum;
+        for (int j = 0; j < sizeof(unsigned long long); ++j) {
+            data.push_back(inum_p[j]);
+        }
+    }
+    int zero = 0;
+    char* zero_p = (char *) &zero;
+    for (int i = 0; i < sizeof(int); ++i) {
+        data.push_back(zero_p[i]);    
+    }
+    // std::cout << "Finish list2directory" << std::endl;
+    return OK;
+}
+
 
 #define EXT_RPC(xx) do { \
     if ((xx) != extent_protocol::OK) { \
