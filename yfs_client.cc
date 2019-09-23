@@ -211,9 +211,43 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     /*
      * your code goes here.
      * note: lookup is what you need to check if file exist;
-     * after create file or dir, you must remember to modify the parent infomation.
+     * after create file or dir, you must remember to modify the parent information.
      */
+    bool found = false;
+    inum i;
+    lookup(parent, name, found, i);
+    if (found == true)
+        return yfs_client::EXIST;
+    extent_protocol::extentid_t id;
+    extent_protocol::status status = ec->create(extent_protocol::T_FILE, id);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::create: ec->create" << std::endl;
+        return RPCERR;
+    }
+    ino_out = id;
 
+    // modify the parent information
+    std::string buf;
+    std::list<dirent> dirent_list;
+    std::string write_buf;
+    status = ec->get(parent, buf);
+
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::create: ec->get" << std::endl;
+        return RPCERR;
+    }
+
+    directory2list(buf, dirent_list);
+    dirent d;
+    d.inum = id;
+    d.name = name;
+    dirent_list.push_back(d);
+    list2directory(write_buf, dirent_list);
+    status = ec->put(parent, write_buf);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::create: ec->put" << std::endl;
+        return RPCERR;
+    }
     return r;
 }
 
@@ -225,9 +259,43 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
     /*
      * your code goes here.
      * note: lookup is what you need to check if directory exist;
-     * after create file or dir, you must remember to modify the parent infomation.
+     * after create file or dir, you must remember to modify the parent information.
      */
+    bool found = false;
+    inum i;
+    lookup(parent, name, found, i);
+    if (found == true)
+        return yfs_client::EXIST;
+    extent_protocol::extentid_t id;
+    extent_protocol::status status = ec->create(extent_protocol::T_DIR, id);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::create: ec->create" << std::endl;
+        return RPCERR;
+    }
+    ino_out = id;
 
+    // modify the parent information
+    std::string buf;
+    std::list<dirent> dirent_list;
+    std::string write_buf;
+    status = ec->get(parent, buf);
+
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::create: ec->get" << std::endl;
+        return RPCERR;
+    }
+
+    directory2list(buf, dirent_list);
+    dirent d;
+    d.inum = id;
+    d.name = name;
+    dirent_list.push_back(d);
+    list2directory(write_buf, dirent_list);
+    status = ec->put(parent, write_buf);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::create: ec->put" << std::endl;
+        return RPCERR;
+    }
     return r;
 }
 
@@ -241,8 +309,20 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
      * note: lookup file from parent dir according to name;
      * you should design the format of directory content.
      */
-
-    return r;
+    std::string local_buf;
+    std::list<dirent> dirent_list;
+    ec->get(parent, local_buf);
+    directory2list(local_buf, dirent_list);
+    for (std::list<dirent>::iterator it = dirent_list.begin(); it != dirent_list.end(); ++it) {
+        if (it->name.compare(name) == 0) {
+            // find it!
+            found = true;
+            ino_out = it->inum;
+            return r;
+        }
+    }
+    found = false;
+    return NOENT;
 }
 
 int
@@ -255,7 +335,27 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
      * note: you should parse the dirctory content using your defined format,
      * and push the dirents to the list.
      */
+    std::string buf;
+    extent_protocol::attr attr;
+    extent_protocol::status status;
+    status = ec->getattr(dir, attr);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::readdir: ec->getattr" << std::endl;
+        return RPCERR;
+    }
 
+    if (attr.type != extent_protocol::T_DIR) {
+        std::cout << "Error in yfs_client::readdir: not a directory" << std::endl;
+        return RPCERR;
+    }
+
+    status = ec->get(dir, buf);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::readdir: ec->get" << std::endl;
+        return RPCERR;
+    }
+    
+    directory2list(buf, list);
     return r;
 }
 

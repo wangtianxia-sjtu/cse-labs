@@ -365,8 +365,10 @@ inode_manager::getattr(uint32_t inum, extent_protocol::attr &a)
    * you can refer to "struct attr" in extent_protocol.h
    */
   struct inode* target = get_inode(inum);
-  if (target == NULL)
+  if (target == NULL) {
+    a.type = 0;
     return;
+  }
   a.atime = target->atime;
   a.ctime = target->ctime;
   a.mtime = target->mtime;
