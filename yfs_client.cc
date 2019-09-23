@@ -9,6 +9,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+bool operator==(const yfs_client::dirent &d1, const yfs_client::dirent &d2) {
+    return (d1.inum == d2.inum && d1.name == d2.name);
+}
+
 yfs_client::yfs_client()
 {
     ec = new extent_client();
@@ -199,7 +203,49 @@ yfs_client::setattr(inum ino, size_t size)
      * note: get the content of inode ino, and modify its content
      * according to the size (<, =, or >) content length.
      */
-
+    extent_protocol::status status;
+    std::string buf;
+    status = ec->get(ino, buf);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::setattr: ec->get(ino, buf)" << std::endl;
+        return RPCERR;
+    }
+    size_t original_size = buf.size();
+    if (size == 0) {
+        std::string write_buf;
+        status = ec->put(ino, write_buf);
+        if (status != extent_protocol::OK) {
+            std::cout << "Error in yfs_client::setattr: ec->put(ino, write_buf) 0" << std::endl;
+            return RPCERR;
+        }
+        return OK;
+    }
+    if (size > original_size) {
+        // try to set size larger than the original size, add paddings
+        std::string write_buf(size, 0);
+        for (size_t i = 0; i < original_size; ++i) {
+            write_buf[i] = buf[i];
+        }
+        status = ec->put(ino, write_buf);
+        if (status != extent_protocol::OK) {
+            std::cout << "Error in yfs_client::setattr: ec->put(ino, write_buf) 1" << std::endl;
+            return RPCERR;
+        }
+        return OK;
+    }
+    if (size < original_size) {
+        // try to set a smaller size
+        std::string write_buf(size, 0);
+        for (size_t i = 0; i < size; ++i) {
+            write_buf[i] = buf[i];
+        }
+        status = ec->put(ino, write_buf);
+        if (status != extent_protocol::OK) {
+            std::cout << "Error in yfs_client::setattr: ec->put(ino, write_buf) 2" << std::endl;
+            return RPCERR;
+        }
+        return OK;
+    }
     return r;
 }
 
@@ -269,7 +315,7 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
     extent_protocol::extentid_t id;
     extent_protocol::status status = ec->create(extent_protocol::T_DIR, id);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::create: ec->create" << std::endl;
+        std::cout << "Error in yfs_client::mkdir: ec->create" << std::endl;
         return RPCERR;
     }
     ino_out = id;
@@ -281,7 +327,7 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
     status = ec->get(parent, buf);
 
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::create: ec->get" << std::endl;
+        std::cout << "Error in yfs_client::mkdir: ec->get" << std::endl;
         return RPCERR;
     }
 
@@ -293,7 +339,7 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
     list2directory(write_buf, dirent_list);
     status = ec->put(parent, write_buf);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::create: ec->put" << std::endl;
+        std::cout << "Error in yfs_client::mkdir: ec->put" << std::endl;
         return RPCERR;
     }
     return r;
@@ -368,7 +414,17 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
      * your code goes here.
      * note: read using ec->get().
      */
+    extent_protocol::status status;
+    std::string buf;
 
+    status = ec->get(ino, buf);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::read: ec->get" << std::endl;
+        return RPCERR;
+    }
+    for (off_t i = off; i < buf.size() && i - off < size; ++i) {
+        data.push_back(buf[i]);
+    }
     return r;
 }
 
@@ -383,7 +439,60 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
      * note: write using ec->put().
      * when off > length of original file, fill the holes with '\0'.
      */
+    extent_protocol::status status;
+    std::string buf;
 
+    status = ec->get(ino, buf);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::read: ec->get" << std::endl;
+        return RPCERR;
+    }
+
+    if (off >= buf.size()) {
+        // offset is beyond the end of the original file
+        std::string write_buf(off + size, 0);
+        size_t original_size = buf.size();
+        for (size_t i = 0; i < original_size; ++i) {
+            write_buf[i] = buf[i];
+        }
+        for (off_t i = off; i < off + size; ++i) {
+            write_buf[i] = data[i - off];
+        }
+        status = ec->put(ino, write_buf);
+        if (status != extent_protocol::OK) {
+            std::cout << "Error in yfs_client::read: ec->put 0" << std::endl;
+            return RPCERR;
+        }
+        bytes_written = off + size - original_size;
+        return OK;
+    }
+    if (off < buf.size() && off + size - 1 < buf.size()) {
+        // write at the middle of a file
+        std::string write_buf = buf;
+        for (off_t i = off; i < off + size; ++i) {
+            write_buf[i] = data[i - off];
+        }
+        status = ec->put(ino, write_buf);
+        if (status != extent_protocol::OK) {
+            std::cout << "Error in yfs_client::read: ec->put 1" << std::endl;
+            return RPCERR;
+        }
+        bytes_written = size;
+        return OK;
+    }
+    if (off < buf.size() && off + size - 1 >= buf.size()) {
+        // this write will cause the file to grow
+        std::string write_buf(off + size, 0);
+        size_t original_size = buf.size();
+        for (size_t i = 0; i < original_size; ++i) {
+            write_buf[i] = buf[i];
+        }
+        for (off_t i = off; i < off + size; ++i) {
+            write_buf[i] = data[i - off];
+        }
+        bytes_written = size;
+        return OK;
+    }
     return r;
 }
 
@@ -396,7 +505,39 @@ int yfs_client::unlink(inum parent,const char *name)
      * note: you should remove the file using ec->remove,
      * and update the parent directory content.
      */
+    extent_protocol::status status;
+    std::string buf;
+    std::list<dirent> dirent_list;
+    status = ec->get(parent, buf);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::unlink: ec->get(parent, buf)" << std::endl;
+        return RPCERR;
+    }
+    directory2list(buf, dirent_list);
+    inum target;
+    bool found = false;
+    std::list<dirent>::iterator it;
+    for (it = dirent_list.begin(); it != dirent_list.end(); ++it) {
+        if (it->name.compare(name) == 0) {
+            target = it->inum;
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        std::cout << "Error in yfs_client::unlink: No such file" << std::endl;
+        return NOENT;
+    }
 
+    // remove the file
+    ec->remove(target);
+
+    // update the parent directory content
+    dirent d = *it;
+    dirent_list.remove(d);
+    std::string write_buf;
+    list2directory(write_buf, dirent_list);
+    ec->put(parent, write_buf);
     return r;
 }
 
