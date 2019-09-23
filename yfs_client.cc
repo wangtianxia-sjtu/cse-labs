@@ -57,7 +57,7 @@ yfs_client::isfile(inum inum)
         printf("isfile: %lld is a file\n", inum);
         return true;
     } 
-    printf("isfile: %lld is a dir\n", inum);
+    printf("isfile: %lld is not a file\n", inum);
     return false;
 }
 /** Your code here for Lab...
@@ -70,7 +70,37 @@ bool
 yfs_client::isdir(inum inum)
 {
     // Oops! is this still correct when you implement symlink?
-    return ! isfile(inum);
+    // return ! isfile(inum);
+    extent_protocol::attr a;
+
+    if (ec->getattr(inum, a) != extent_protocol::OK) {
+        printf("error getting attr\n");
+        return false;
+    }
+
+    if (a.type == extent_protocol::T_DIR) {
+        printf("isdir: %lld is a directory", inum);
+        return true;
+    }
+    printf("isdir: %lld is not a directory", inum);
+    return false;
+}
+
+bool yfs_client::issymlink(inum inum)
+{
+    extent_protocol::attr a;
+
+    if (ec->getattr(inum, a) != extent_protocol::OK) {
+        printf("error getting attr\n");
+        return false;
+    }
+
+    if (a.type == extent_protocol::T_SYMLINK) {
+        printf("issymlink: %lld is a symlink", inum);
+        return true;
+    }
+    printf("issymlink: %lld is not a symlink", inum);
+    return false;
 }
 
 int
@@ -541,3 +571,61 @@ int yfs_client::unlink(inum parent,const char *name)
     return r;
 }
 
+int yfs_client::create_symlink(inum parent, const char* link, mode_t mode, const char* name, inum& ino_out) {
+
+    bool found = false;
+    inum i;
+    lookup(parent, name, found, i);
+    if (found == true)
+        return yfs_client::EXIST;
+    extent_protocol::extentid_t id;
+    extent_protocol::status status = ec->create(extent_protocol::T_SYMLINK, id);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::create_symlink: ec->create(extent_protocol::T_SYMLINK, id)" << std::endl;
+        return RPCERR;
+    }
+    ino_out = id;
+
+    // modify the parent information
+    std::string buf;
+    std::list<dirent> dirent_list;
+    std::string write_buf;
+    status = ec->get(parent, buf);
+
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::create_symlink: ec->get(parent, buf)" << std::endl;
+        return RPCERR;
+    }
+
+    directory2list(buf, dirent_list);
+    dirent d;
+    d.inum = id;
+    d.name = name;
+    dirent_list.push_back(d);
+    list2directory(write_buf, dirent_list);
+    status = ec->put(parent, write_buf);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::create_symlink: ec->put(parent, write_buf)" << std::endl;
+        return RPCERR;
+    }
+
+    // write the link as the file content
+    std::string file_content(link);
+    status = ec->put(id, file_content);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::create_symlink: ec->put(id, file_content)" << std::endl;
+        return RPCERR;
+    }
+    return OK;
+}
+
+int yfs_client::read_symlink(inum ino, std::string &link) {
+
+    extent_protocol::status status;
+    status = ec->get(ino, link);
+    if (status != extent_protocol::OK) {
+        std::cout << "Error in yfs_client::read_symlink: ec->get(ino, link)" << std::endl;
+        return RPCERR;
+    }
+    return OK;
+}
