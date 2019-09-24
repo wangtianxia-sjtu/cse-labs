@@ -513,6 +513,7 @@ void fuseserver_symlink(fuse_req_t req, const char *link, fuse_ino_t parent, con
     if ((r = yfs->create_symlink(parent, link, 0777, name, ino_out)) == yfs_client::OK) {
         printf("yfs->create_symlink succeeded\n");
         e.ino = ino_out;
+        getattr(ino_out, e.attr);
         fuse_reply_entry(req, &e);
     } else {
         printf("yfs->create_symlink failed\n");
