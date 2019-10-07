@@ -10,9 +10,11 @@
 class extent_client {
  private:
   rpcc *cl;
+  extent_server *es;
 
  public:
   extent_client(std::string dst);
+  extent_client();
 
   extent_protocol::status create(uint32_t type, extent_protocol::extentid_t &eid);
   extent_protocol::status get(extent_protocol::extentid_t eid, 

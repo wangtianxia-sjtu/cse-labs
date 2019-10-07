@@ -7,6 +7,11 @@
 #include <unistd.h>
 #include <time.h>
 
+extent_client::extent_client()
+{
+  es = new extent_server();
+}
+
 extent_client::extent_client(std::string dst)
 {
   sockaddr_in dstsock;

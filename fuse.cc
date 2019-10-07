@@ -46,7 +46,7 @@ getattr(yfs_client::inum inum, struct stat &st)
 
     st.st_ino = inum;
     printf("getattr %016llx %d\n", inum, yfs->isfile(inum));
-    if(yfs->isfile(inum)){
+    if (yfs->isfile(inum)) {
         yfs_client::fileinfo info;
         ret = yfs->getfile(inum, info);
         if(ret != yfs_client::OK)
@@ -59,16 +59,33 @@ getattr(yfs_client::inum inum, struct stat &st)
         st.st_size = info.size;
         printf("   getattr -> %llu\n", info.size);
     } else {
-        yfs_client::dirinfo info;
-        ret = yfs->getdir(inum, info);
-        if(ret != yfs_client::OK)
-            return ret;
-        st.st_mode = S_IFDIR | 0777;
-        st.st_nlink = 2;
-        st.st_atime = info.atime;
-        st.st_mtime = info.mtime;
-        st.st_ctime = info.ctime;
-        printf("   getattr -> %lu %lu %lu\n", info.atime, info.mtime, info.ctime);
+        if (yfs->isdir(inum)) {
+            yfs_client::dirinfo info;
+            ret = yfs->getdir(inum, info);
+            if(ret != yfs_client::OK)
+                return ret;
+            st.st_mode = S_IFDIR | 0777;
+            st.st_nlink = 2;
+            st.st_atime = info.atime;
+            st.st_mtime = info.mtime;
+            st.st_ctime = info.ctime;
+            printf("   getattr -> %lu %lu %lu\n", info.atime, info.mtime, info.ctime);
+        }
+        else {
+            if (yfs->issymlink(inum)) {
+                yfs_client::fileinfo info;
+                ret = yfs->getfile(inum, info);
+                if (ret != yfs_client::OK)
+                    return ret;
+                st.st_mode = S_IFLNK | 0777;
+                st.st_nlink = 1;
+                st.st_atime = info.atime;
+                st.st_mtime = info.mtime;
+                st.st_ctime = info.ctime;
+                st.st_size = info.size;
+                printf("   getattr -> symlink %llu\n", info.size);
+            }
+        }
     }
     return yfs_client::OK;
 }
@@ -236,11 +253,17 @@ fuseserver_createhelper(fuse_ino_t parent, const char *name,
     e->entry_timeout = 0.0;
     e->generation = 0;
 
+    printf("fuseserver_createhelper\n");
+
     yfs_client::inum inum;
-    if ( type == extent_protocol::T_FILE )
+    if ( type == extent_protocol::T_FILE ) {
+        printf("Trying to make a file %s under inode %ld\n", name, parent);
 		ret = yfs->create(parent, name, mode, inum);
-	else 
-		ret = yfs->mkdir(parent,name,mode,inum);
+    }
+	if ( type == extent_protocol::T_DIR ) {
+        printf("Trying to make a directory %s under inode %ld\n", name, parent);
+		ret = yfs->mkdir(parent, name, mode, inum);
+    }
     if (ret != yfs_client::OK)
         return ret;
     e->ino = inum;
@@ -252,6 +275,8 @@ void
 fuseserver_create(fuse_req_t req, fuse_ino_t parent, const char *name,
         mode_t mode, struct fuse_file_info *fi)
 {
+    printf("fuseserver_create\n");
+    printf("Trying to create a file %s under %ld\n", name, parent);
     struct fuse_entry_param e;
     yfs_client::status ret;
     if( (ret = fuseserver_createhelper( parent, name, mode, &e, extent_protocol::T_FILE)) == yfs_client::OK ) {
@@ -296,14 +321,19 @@ fuseserver_lookup(fuse_req_t req, fuse_ino_t parent, const char *name)
     e.generation = 0;
     bool found = false;
 
+    printf("fuseserver_lookup\n");
+    printf("Trying to find %s in inode %ld\n", name, parent);
+
      yfs_client::inum ino;
      yfs->lookup(parent, name, found, ino);
 
     if (found) {
+        printf("%s found\n", name);
         e.ino = ino;
         getattr(ino, e.attr);
         fuse_reply_entry(req, &e);
     } else {
+        printf("%s not found\n", name);
         fuse_reply_err(req, ENOENT);
     }
 
@@ -402,12 +432,17 @@ fuseserver_mkdir(fuse_req_t req, fuse_ino_t parent, const char *name,
     // Suppress compiler warning of unused e.
     (void) e;
 
+    printf("fuseserver_mkdir\n");
+    printf("Trying to create %s under %ld\n", name, parent);
+
 #if 1
     // Change the above line to "#if 1", and your code goes here
     yfs_client::status ret;
     if (( ret = fuseserver_createhelper( parent, name, mode, &e, extent_protocol::T_DIR)) == yfs_client::OK) {
+        printf("%s created (directory)\n", name);
         fuse_reply_entry(req, &e);    
     } else {
+        printf("failed to create %s (directory)\n", name);
         if (ret == yfs_client::EXIST) {
             fuse_reply_err(req, EEXIST);
         } else {
@@ -441,6 +476,51 @@ fuseserver_unlink(fuse_req_t req, fuse_ino_t parent, const char *name)
         }
     }
 }
+
+//
+// Read a symbolic link
+//
+
+void fuseserver_readlink(fuse_req_t req, fuse_ino_t ino)
+{
+    int r;
+    std::string buf;
+    printf("fuseserver_readlink\n");
+    if ((r = yfs->read_symlink(ino, buf)) == yfs_client::OK) {
+        printf("yfs->read_symlink succeeded\n");
+        fuse_reply_readlink(req, buf.data());
+    } else {
+        printf("yfs->read_symlink failed\n");
+        fuse_reply_err(req, EIO);
+    }
+}
+
+//
+// Create a symbolic link
+//
+
+void fuseserver_symlink(fuse_req_t req, const char *link, fuse_ino_t parent, const char *name)
+{
+    int r;
+    struct fuse_entry_param e;
+    unsigned long long ino_out;
+    e.attr_timeout = 0.0;
+    e.entry_timeout = 0.0;
+    e.generation = 0;
+
+    printf("fuseserver_symlink\n");
+
+    if ((r = yfs->create_symlink(parent, link, 0777, name, ino_out)) == yfs_client::OK) {
+        printf("yfs->create_symlink succeeded\n");
+        e.ino = ino_out;
+        getattr(ino_out, e.attr);
+        fuse_reply_entry(req, &e);
+    } else {
+        printf("yfs->create_symlink failed\n");
+        fuse_reply_err(req, EIO);
+    }
+}
+
 
 void
 fuseserver_statfs(fuse_req_t req)
@@ -505,6 +585,8 @@ main(int argc, char *argv[])
      * routines here to implement symbolic link,
      * rmdir, etc.
      * */
+    fuseserver_oper.readlink   = fuseserver_readlink;
+    fuseserver_oper.symlink    = fuseserver_symlink;
 
     const char *fuse_argv[20];
     int fuse_argc = 0;
