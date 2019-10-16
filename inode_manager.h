@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 #include <set>
+#include <pthread.h>
 #include "extent_protocol.h" // TODO: delete it
 
 #define DISK_SIZE  1024*1024*16
@@ -38,6 +39,8 @@ class block_manager {
   disk *d;
   std::map <uint32_t, int> using_blocks;
   std::set<uint32_t> free_blocks_number;
+  pthread_mutex_t mutex;
+
  public:
   block_manager();
   struct superblock sb;
@@ -83,6 +86,7 @@ typedef struct inode {
 class inode_manager {
  private:
   block_manager *bm;
+  pthread_mutex_t mutex;
   std::set<uint32_t> free_inode_num;
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);

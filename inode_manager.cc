@@ -36,8 +36,10 @@ block_manager::alloc_block()
    * note: you should mark the corresponding bit in block bitmap when alloc.
    * you need to think about which block you can start to be allocated.
    */
+  pthread_mutex_lock(&mutex);
   blockid_t result = *free_blocks_number.begin();
   free_blocks_number.erase(free_blocks_number.begin());
+  pthread_mutex_unlock(&mutex);
   return result;
 }
 
@@ -48,7 +50,9 @@ block_manager::free_block(uint32_t id)
    * your code goes here.
    * note: you should unmark the corresponding bit in the block bitmap when free.
    */
+  pthread_mutex_lock(&mutex);
   free_blocks_number.insert(id);
+  pthread_mutex_unlock(&mutex);
   return;
 }
 
@@ -67,6 +71,8 @@ block_manager::block_manager()
   for (int i = IBLOCK(INODE_NUM - 1, BLOCK_NUM) + 1; i < BLOCK_NUM; ++i) {
     free_blocks_number.insert(i);
   }
+
+  pthread_mutex_init(&mutex, NULL);
 }
 
 void
@@ -89,6 +95,7 @@ inode_manager::inode_manager()
   for (uint32_t i = 1; i<INODE_NUM; ++i) {
     free_inode_num.insert(i);
   }
+  pthread_mutex_init(&mutex, NULL);
   uint32_t root_dir = alloc_inode(extent_protocol::T_DIR);
   if (root_dir != 1) {
     printf("\tim: error! alloc first inode %d, should be 1\n", root_dir);
@@ -106,6 +113,7 @@ inode_manager::alloc_inode(uint32_t type)
    * note: the normal inode block should begin from the 2nd inode block.
    * the 1st is used for root_dir, see inode_manager::inode_manager().
    */
+  pthread_mutex_lock(&mutex);
   struct inode* ino = (struct inode*)malloc(sizeof(struct inode));
   ino->type = type;
   ino->atime = time(NULL);
@@ -116,6 +124,7 @@ inode_manager::alloc_inode(uint32_t type)
   free_inode_num.erase(free_inode_num.begin());
   put_inode(inum, ino);
   free(ino);
+  pthread_mutex_unlock(&mutex);
   return inum;
 }
 
@@ -127,6 +136,7 @@ inode_manager::free_inode(uint32_t inum)
    * note: you need to check if the inode is already a freed one;
    * if not, clear it, and remember to write back to disk.
    */
+  pthread_mutex_lock(&mutex);
   struct inode* target = get_inode(inum);
   if (target->type == 0) {
     // Already be freed
@@ -135,6 +145,7 @@ inode_manager::free_inode(uint32_t inum)
   target->type = 0;
   put_inode(inum, target);
   free_inode_num.insert(inum);
+  pthread_mutex_unlock(&mutex);
   return;
 }
 
