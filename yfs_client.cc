@@ -714,7 +714,8 @@ int yfs_client::create_symlink(inum parent, const char* link, mode_t mode, const
         lc->release(parent);
         return RPCERR;
     }
-    // lc->acquire(id);
+    
+    // No need to acquire a lock for ino_out here
     ino_out = id;
 
     // modify the parent information
@@ -726,7 +727,6 @@ int yfs_client::create_symlink(inum parent, const char* link, mode_t mode, const
     if (status != extent_protocol::OK) {
         std::cout << "Error in yfs_client::create_symlink: ec->get(parent, buf)" << std::endl;
         lc->release(parent);
-        // lc->release(id);
         return RPCERR;
     }
 
@@ -740,7 +740,6 @@ int yfs_client::create_symlink(inum parent, const char* link, mode_t mode, const
     if (status != extent_protocol::OK) {
         std::cout << "Error in yfs_client::create_symlink: ec->put(parent, write_buf)" << std::endl;
         lc->release(parent);
-        // lc->release(id);
         return RPCERR;
     }
 
@@ -750,11 +749,9 @@ int yfs_client::create_symlink(inum parent, const char* link, mode_t mode, const
     if (status != extent_protocol::OK) {
         std::cout << "Error in yfs_client::create_symlink: ec->put(id, file_content)" << std::endl;
         lc->release(parent);
-        // lc->release(id);
         return RPCERR;
     }
     lc->release(parent);
-    // lc->release(id);
     return OK;
 }
 
