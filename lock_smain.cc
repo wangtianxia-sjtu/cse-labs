@@ -46,6 +46,9 @@ main(int argc, char *argv[])
   server.reg(lock_protocol::acquire, &ls, &lock_server_cache::acquire);
 #endif
 
+  // TODO: Register a new handler here
+  // server.reg(lock_protocol::acquire, &ls, &lock_server::acquire);
+  // server.reg(lock_protocol::release, &ls, &lock_server::release);
 
   while(1)
     sleep(1000);
