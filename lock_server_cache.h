@@ -11,22 +11,37 @@
 #include "lock_server.h"
 
 
+class lock_metadata;
+
 class lock_server_cache {
 
-  enum lock_status { FREE, LOCKED, REVOKING };
+ public:
+  enum lock_status { FREE, LOCKED };
 
  private:
   int nacquire;
   pthread_mutex_t lock_server_mutex;
-  std::map<lock_protocol::lockid_t, lock_status> locks;
-  std::map<lock_protocol::lockid_t, std::queue<std::string>> waiting_set;
-  std::map<lock_protocol::lockid_t, std::string> lock_owners;
+  std::map<lock_protocol::lockid_t, lock_metadata*> locks;
 
  public:
   lock_server_cache();
   lock_protocol::status stat(lock_protocol::lockid_t, int &);
   int acquire(lock_protocol::lockid_t, std::string id, int &);
   int release(lock_protocol::lockid_t, std::string id, int &);
+};
+
+class lock_metadata {
+  public:
+    int stat; // enum lock_status { FREE, LOCKED }
+    bool revoking;
+    std::string owner;
+    unsigned long long version;
+    lock_metadata() {
+      stat = lock_server_cache::FREE;
+      revoking = false;
+      owner = "";
+      version = 0ULL;
+    }
 };
 
 #endif

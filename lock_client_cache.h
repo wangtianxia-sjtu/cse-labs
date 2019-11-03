@@ -9,6 +9,8 @@
 #include "rpc.h"
 #include "lock_client.h"
 #include "lang/verify.h"
+#include <queue>
+#include <map>
 
 
 // Classes that inherit lock_release_user can override dorelease so that 
@@ -20,12 +22,17 @@ class lock_release_user {
   virtual ~lock_release_user() {};
 };
 
+class lock_metadata_client;
+
 class lock_client_cache : public lock_client {
  private:
   class lock_release_user *lu;
   int rlock_port;
   std::string hostname;
   std::string id;
+  pthread_mutex_t lock_client_mutex;
+  std::map<lock_protocol::lockid_t, lock_metadata_client*> locks;
+
  public:
   static int last_port;
   lock_client_cache(std::string xdst, class lock_release_user *l = 0);
@@ -36,6 +43,18 @@ class lock_client_cache : public lock_client {
                                         int &);
   rlock_protocol::status retry_handler(lock_protocol::lockid_t, 
                                        int &);
+  enum lock_status_client { FREE, NONE, LOCKED };
+};
+
+class lock_metadata_client {
+  public:
+    std::queue<pthread_cond_t*> waiting_set;
+    int stat; // enum lock_status_client { FREE, NONE, LOCKED }
+    bool acquiring;
+    lock_metadata_client() {
+      stat = lock_client_cache::NONE;
+      acquiring = false;
+    }
 };
 
 

@@ -7,7 +7,8 @@
 
 class lock_protocol {
  public:
-  enum xxstatus { OK, RETRY, RPCERR, NOENT, IOERR };
+  enum xxstatus { OK, RETRY, RPCERR, NOENT, IOERR, NON_SUITABLE_RELEASE };
+  enum revoke_result { REVOKE_SUCCEEDED, REVOKE_FAILED, NO_LOCK_ACQUIRING, NO_LOCK_NOT_ACQUIRING };
   typedef int status;
   typedef unsigned long long lockid_t;
   enum rpc_numbers {
