@@ -12,14 +12,16 @@
 
 lock_server_cache::lock_server_cache()
 {
+  pthread_mutex_init(&lock_server_mutex, NULL);
 }
 
 
 int lock_server_cache::acquire(lock_protocol::lockid_t lid, std::string id, 
                                int &)
 {
-  lock_protocol::status ret = lock_protocol::OK;
-  return ret;
+  pthread_mutex_lock(&lock_server_mutex);
+  
+  pthread_mutex_unlock(&lock_server_mutex);
 }
 
 int 
