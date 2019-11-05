@@ -30,6 +30,8 @@ main(int argc, char *argv[])
     count = atoi(count_env);
   }
 
+  setenv("RPC_LOSSY", "5", 1);
+
   //jsl_set_debug(2);
 
 #ifndef RSM

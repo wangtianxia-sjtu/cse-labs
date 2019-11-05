@@ -58,7 +58,7 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
     pthread_mutex_unlock(&lock_client_mutex);
     while (result != lock_protocol::OK) {
       result = cl->call(lock_protocol::acquire, lid, id, r);
-      sleep(2);
+      // sleep(1);
     }
     pthread_mutex_lock(&lock_client_mutex);
     this_lock->stat = lock_client_cache::LOCKED;
