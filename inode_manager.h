@@ -4,11 +4,13 @@
 #define inode_h
 
 #include <stdint.h>
+#include <set>
+#include <pthread.h>
 #include "extent_protocol.h" // TODO: delete it
 
 #define DISK_SIZE  1024*1024*16
 #define BLOCK_SIZE 512
-#define BLOCK_NUM  (DISK_SIZE/BLOCK_SIZE)
+#define BLOCK_NUM  (DISK_SIZE/BLOCK_SIZE) // 32768 blocks in all
 
 typedef uint32_t blockid_t;
 
@@ -36,6 +38,9 @@ class block_manager {
  private:
   disk *d;
   std::map <uint32_t, int> using_blocks;
+  std::set<uint32_t> free_blocks_number;
+  pthread_mutex_t mutex;
+
  public:
   block_manager();
   struct superblock sb;
@@ -48,14 +53,16 @@ class block_manager {
 
 // inode layer -----------------------------------------
 
-#define INODE_NUM  1024
+#define INODE_NUM  1024 // 1024 inodes in all
 
 // Inodes per block.
-#define IPB           1
+#define IPB           1 // 1 inode per block
 //(BLOCK_SIZE / sizeof(struct inode))
 
 // Block containing inode i
-#define IBLOCK(i, nblocks)     ((nblocks)/BPB + (i)/IPB + 3)
+#define IBLOCK(i, nblocks)     ((nblocks)/BPB + (i)/IPB + 3) // nblocks => BLOCK_NUM i => inum
+// (nblocks)/BPB == 8 bitmap blocks 
+
 
 // Bitmap bits per block
 #define BPB           (BLOCK_SIZE*8)
@@ -64,7 +71,7 @@ class block_manager {
 #define BBLOCK(b) ((b)/BPB + 2)
 
 #define NDIRECT 100
-#define NINDIRECT (BLOCK_SIZE / sizeof(uint))
+#define NINDIRECT (BLOCK_SIZE / sizeof(uint)) // BLOCK_SIZE == 512 bytes
 #define MAXFILE (NDIRECT + NINDIRECT)
 
 typedef struct inode {
@@ -79,8 +86,12 @@ typedef struct inode {
 class inode_manager {
  private:
   block_manager *bm;
+  pthread_mutex_t mutex;
+  std::set<uint32_t> free_inode_num;
   struct inode* get_inode(uint32_t inum);
   void put_inode(uint32_t inum, struct inode *ino);
+  void get_datablock(struct inode* inode, int inode_blocks_index, char* buf);
+  uint32_t get_datablock_number(struct inode* inode, int inode_blocks_index);
 
  public:
   inode_manager();
