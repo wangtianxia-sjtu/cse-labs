@@ -8,6 +8,7 @@
 #include "lock_protocol.h"
 #include "rpc.h"
 #include "lock_client.h"
+#include "extent_client.h"
 #include "lang/verify.h"
 #include <queue>
 #include <map>
@@ -32,10 +33,12 @@ class lock_client_cache : public lock_client {
   std::string id;
   pthread_mutex_t lock_client_mutex;
   std::map<lock_protocol::lockid_t, lock_metadata_client*> locks;
+  extent_client* ec;
 
  public:
   static int last_port;
   lock_client_cache(std::string xdst, class lock_release_user *l = 0);
+  lock_client_cache(std::string xdst, extent_client* _ec, class lock_release_user *l = 0);
   virtual ~lock_client_cache() {};
   lock_protocol::status acquire(lock_protocol::lockid_t);
   lock_protocol::status release(lock_protocol::lockid_t);

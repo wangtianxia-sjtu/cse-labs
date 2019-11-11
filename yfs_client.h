@@ -9,6 +9,8 @@
 //#include "yfs_protocol.h"
 #include "extent_client.h"
 #include <vector>
+#include <map>
+#include <pthread.h>
 
 
 class yfs_client {
@@ -65,6 +67,27 @@ class yfs_client {
   /** you may need to add symbolic link related methods here.*/
   int create_symlink(inum parent, const char* link, mode_t, const char* name, inum& ino_out);
   int read_symlink(inum, std::string &);
+};
+
+class local_file_cache_entry {
+  public:
+    std::string content;
+    bool valid;
+    bool isFile;
+    yfs_client::fileinfo fileinfo;
+};
+
+class local_cache {
+  private:
+    std::map<yfs_client::inum, local_file_cache_entry> cache_map;
+    pthread_mutex_t lock;
+
+  public:
+    local_cache() {
+      pthread_mutex_init(&lock, NULL);
+    }
+
+    // local_file_cache_entry getCache TODO
 };
 
 #endif 

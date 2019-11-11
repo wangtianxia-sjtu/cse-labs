@@ -29,6 +29,27 @@ lock_client_cache::lock_client_cache(std::string xdst,
   rpcs *rlsrpc = new rpcs(rlock_port);
   rlsrpc->reg(rlock_protocol::revoke, this, &lock_client_cache::revoke_handler);
   rlsrpc->reg(rlock_protocol::retry, this, &lock_client_cache::retry_handler);
+  ec = NULL;
+}
+
+lock_client_cache::lock_client_cache(std::string xdst, extent_client* _ec, 
+				     class lock_release_user *_lu)
+  : lock_client(xdst), lu(_lu)
+{
+  srand(time(NULL)^last_port);
+  rlock_port = ((rand()%32000) | (0x1 << 10));
+  const char *hname;
+  // VERIFY(gethostname(hname, 100) == 0);
+  hname = "127.0.0.1";
+  std::ostringstream host;
+  host << hname << ":" << rlock_port;
+  id = host.str();
+  last_port = rlock_port;
+  pthread_mutex_init(&lock_client_mutex, NULL);
+  rpcs *rlsrpc = new rpcs(rlock_port);
+  rlsrpc->reg(rlock_protocol::revoke, this, &lock_client_cache::revoke_handler);
+  rlsrpc->reg(rlock_protocol::retry, this, &lock_client_cache::retry_handler);
+  ec = _ec;
 }
 
 lock_protocol::status
