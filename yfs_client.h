@@ -43,6 +43,11 @@ class yfs_client {
   static inum n2i(std::string);
   int directory2list(std::string &data, std::list<dirent> &result);
   int list2directory(std::string &data, std::list<dirent> &result);
+  extent_protocol::status _create(uint32_t type, extent_protocol::extentid_t &id);
+  extent_protocol::status _get(extent_protocol::extentid_t eid, std::string &buf);
+  extent_protocol::status _getattr(extent_protocol::extentid_t eid, extent_protocol::attr &attr);
+  extent_protocol::status _put(extent_protocol::extentid_t eid, std::string buf);
+  extent_protocol::status _remove(extent_protocol::extentid_t eid);
 
  public:
   yfs_client(std::string, std::string);
@@ -79,7 +84,7 @@ class local_file_cache_entry {
 
 class local_cache {
   private:
-    std::map<yfs_client::inum, local_file_cache_entry> cache_map;
+    std::map<yfs_client::inum, local_file_cache_entry*> cache_map;
     pthread_mutex_t lock;
 
   public:
@@ -87,7 +92,14 @@ class local_cache {
       pthread_mutex_init(&lock, NULL);
     }
 
-    // local_file_cache_entry getCache TODO
+    local_file_cache_entry* getCache(yfs_client::inum inode) {
+      pthread_mutex_lock(&lock);
+      if (cache_map.find(inode) == cache_map.end()) {
+        return NULL;
+      }
+      pthread_mutex_unlock(&lock);
+      return cache_map[inode];
+    }
 };
 
 #endif 
