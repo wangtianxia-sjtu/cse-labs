@@ -72,6 +72,9 @@ lock_tester=lock_tester.cc lock_client.cc
 ifeq ($(LAB3GE),1)
   lock_tester += lock_client_cache.cc
 endif
+ifeq ($(LAB4GE),1)
+  lock_tester += yfs_client.cc extent_client.cc extent_server.cc inode_manager.cc
+endif
 ifeq ($(LAB7GE),1)
   lock_tester+=rsm_client.cc handle.cc lock_client_cache_rsm.cc
 endif

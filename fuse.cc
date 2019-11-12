@@ -215,8 +215,9 @@ fuseserver_write(fuse_req_t req, fuse_ino_t ino,
 #if 1
     // Change the above line to "#if 1", and your code goes here
     int r;
-    if ((r = yfs->write(ino, size, off, buf, size)) == yfs_client::OK) {
-        fuse_reply_write(req, size);
+    size_t bytes_written;
+    if ((r = yfs->write(ino, size, off, buf, bytes_written)) == yfs_client::OK) {
+        fuse_reply_write(req, bytes_written);
     } else {
         fuse_reply_err(req, ENOENT);
     }

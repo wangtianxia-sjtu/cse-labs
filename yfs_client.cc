@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <assert.h>
 
 
 bool operator==(const yfs_client::dirent &d1, const yfs_client::dirent &d2) {
@@ -23,9 +24,12 @@ yfs_client::yfs_client()
 yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
 {
   ec = new extent_client(extent_dst);
-  lc = new lock_client_cache(lock_dst);
-  if (ec->put(1, "") != extent_protocol::OK)
+  cache = new local_cache();
+  lc = new lock_client_cache(lock_dst, ec, cache);
+  lc->acquire(1);
+  if (_put(1, "") != extent_protocol::OK)
       printf("error init root dir\n"); // XYB: init root dir
+  lc->release(1);
 }
 
 
@@ -53,7 +57,7 @@ yfs_client::isfile(inum inum)
 
     lc->acquire(inum);
 
-    if (ec->getattr(inum, a) != extent_protocol::OK) {
+    if (_getattr(inum, a) != extent_protocol::OK) {
         printf("error getting attr\n");
         lc->release(inum);
         return false;
@@ -83,7 +87,7 @@ yfs_client::isdir(inum inum)
 
     lc->acquire(inum);
 
-    if (ec->getattr(inum, a) != extent_protocol::OK) {
+    if (_getattr(inum, a) != extent_protocol::OK) {
         printf("error getting attr\n");
         lc->release(inum);
         return false;
@@ -105,7 +109,7 @@ bool yfs_client::issymlink(inum inum)
 
     lc->acquire(inum);
 
-    if (ec->getattr(inum, a) != extent_protocol::OK) {
+    if (_getattr(inum, a) != extent_protocol::OK) {
         printf("error getting attr\n");
         lc->release(inum);
         return false;
@@ -130,7 +134,7 @@ yfs_client::getfile(inum inum, fileinfo &fin)
 
     printf("getfile %016llx\n", inum);
     extent_protocol::attr a;
-    if (ec->getattr(inum, a) != extent_protocol::OK) {
+    if (_getattr(inum, a) != extent_protocol::OK) {
         r = IOERR;
         goto release;
     }
@@ -155,7 +159,7 @@ yfs_client::getdir(inum inum, dirinfo &din)
 
     printf("getdir %016llx\n", inum);
     extent_protocol::attr a;
-    if (ec->getattr(inum, a) != extent_protocol::OK) {
+    if (_getattr(inum, a) != extent_protocol::OK) {
         r = IOERR;
         goto release;
     }
@@ -261,18 +265,18 @@ yfs_client::setattr(inum ino, size_t size)
      */
     extent_protocol::status status;
     std::string buf;
-    status = ec->get(ino, buf);
+    status = _get(ino, buf);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::setattr: ec->get(ino, buf)" << std::endl;
+        std::cout << "Error in yfs_client::setattr: _get(ino, buf)" << std::endl;
         lc->release(ino);
         return RPCERR;
     }
     size_t original_size = buf.size();
     if (size == 0) {
         std::string write_buf;
-        status = ec->put(ino, write_buf);
+        status = _put(ino, write_buf);
         if (status != extent_protocol::OK) {
-            std::cout << "Error in yfs_client::setattr: ec->put(ino, write_buf) 0" << std::endl;
+            std::cout << "Error in yfs_client::setattr: _put(ino, write_buf) 0" << std::endl;
             lc->release(ino);
             return RPCERR;
         }
@@ -285,9 +289,9 @@ yfs_client::setattr(inum ino, size_t size)
         for (size_t i = 0; i < original_size; ++i) {
             write_buf[i] = buf[i];
         }
-        status = ec->put(ino, write_buf);
+        status = _put(ino, write_buf);
         if (status != extent_protocol::OK) {
-            std::cout << "Error in yfs_client::setattr: ec->put(ino, write_buf) 1" << std::endl;
+            std::cout << "Error in yfs_client::setattr: _put(ino, write_buf) 1" << std::endl;
             lc->release(ino);
             return RPCERR;
         }
@@ -300,9 +304,9 @@ yfs_client::setattr(inum ino, size_t size)
         for (size_t i = 0; i < size; ++i) {
             write_buf[i] = buf[i];
         }
-        status = ec->put(ino, write_buf);
+        status = _put(ino, write_buf);
         if (status != extent_protocol::OK) {
-            std::cout << "Error in yfs_client::setattr: ec->put(ino, write_buf) 2" << std::endl;
+            std::cout << "Error in yfs_client::setattr: _put(ino, write_buf) 2" << std::endl;
             lc->release(ino);
             return RPCERR;
         }
@@ -331,7 +335,7 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     {
         std::string local_buf;
         std::list<dirent> dirent_list;
-        ec->get(parent, local_buf);
+        _get(parent, local_buf);
         directory2list(local_buf, dirent_list);
         for (std::list<dirent>::iterator it = dirent_list.begin(); it != dirent_list.end(); ++it) {
             if (it->name.compare(name) == 0) {
@@ -347,9 +351,9 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
         return yfs_client::EXIST;
     }
     extent_protocol::extentid_t id;
-    extent_protocol::status status = ec->create(extent_protocol::T_FILE, id);
+    extent_protocol::status status = _create(extent_protocol::T_FILE, id);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::create: ec->create" << std::endl;
+        std::cout << "Error in yfs_client::create: _create" << std::endl;
         lc->release(parent);
         return RPCERR;
     }
@@ -359,10 +363,10 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     std::string buf;
     std::list<dirent> dirent_list;
     std::string write_buf;
-    status = ec->get(parent, buf);
+    status = _get(parent, buf);
 
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::create: ec->get" << std::endl;
+        std::cout << "Error in yfs_client::create: _get" << std::endl;
         lc->release(parent);
         return RPCERR;
     }
@@ -373,9 +377,9 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     d.name = name;
     dirent_list.push_back(d);
     list2directory(write_buf, dirent_list);
-    status = ec->put(parent, write_buf);
+    status = _put(parent, write_buf);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::create: ec->put" << std::endl;
+        std::cout << "Error in yfs_client::create: _put" << std::endl;
         lc->release(parent);
         return RPCERR;
     }
@@ -401,7 +405,7 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
     {
         std::string local_buf;
         std::list<dirent> dirent_list;
-        ec->get(parent, local_buf);
+        _get(parent, local_buf);
         directory2list(local_buf, dirent_list);
         for (std::list<dirent>::iterator it = dirent_list.begin(); it != dirent_list.end(); ++it) {
             if (it->name.compare(name) == 0) {
@@ -417,9 +421,9 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
         return yfs_client::EXIST;
     }
     extent_protocol::extentid_t id;
-    extent_protocol::status status = ec->create(extent_protocol::T_DIR, id);
+    extent_protocol::status status = _create(extent_protocol::T_DIR, id);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::mkdir: ec->create" << std::endl;
+        std::cout << "Error in yfs_client::mkdir: _create" << std::endl;
         lc->release(parent);
         return RPCERR;
     }
@@ -429,10 +433,10 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
     std::string buf;
     std::list<dirent> dirent_list;
     std::string write_buf;
-    status = ec->get(parent, buf);
+    status = _get(parent, buf);
 
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::mkdir: ec->get" << std::endl;
+        std::cout << "Error in yfs_client::mkdir: _get" << std::endl;
         lc->release(parent);
         return RPCERR;
     }
@@ -443,9 +447,9 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
     d.name = name;
     dirent_list.push_back(d);
     list2directory(write_buf, dirent_list);
-    status = ec->put(parent, write_buf);
+    status = _put(parent, write_buf);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::mkdir: ec->put" << std::endl;
+        std::cout << "Error in yfs_client::mkdir: _put" << std::endl;
         lc->release(parent);
         return RPCERR;
     }
@@ -467,7 +471,7 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
      */
     std::string local_buf;
     std::list<dirent> dirent_list;
-    ec->get(parent, local_buf);
+    _get(parent, local_buf);
     directory2list(local_buf, dirent_list);
     for (std::list<dirent>::iterator it = dirent_list.begin(); it != dirent_list.end(); ++it) {
         if (it->name.compare(name) == 0) {
@@ -498,9 +502,9 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
     std::string buf;
     extent_protocol::attr attr;
     extent_protocol::status status;
-    status = ec->getattr(dir, attr);
+    status = _getattr(dir, attr);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::readdir: ec->getattr" << std::endl;
+        std::cout << "Error in yfs_client::readdir: _getattr" << std::endl;
         lc->release(dir);
         return RPCERR;
     }
@@ -511,9 +515,9 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
         return RPCERR;
     }
 
-    status = ec->get(dir, buf);
+    status = _get(dir, buf);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::readdir: ec->get" << std::endl;
+        std::cout << "Error in yfs_client::readdir: _get" << std::endl;
         lc->release(dir);
         return RPCERR;
     }
@@ -537,9 +541,9 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
     extent_protocol::status status;
     std::string buf;
 
-    status = ec->get(ino, buf);
+    status = _get(ino, buf);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::read: ec->get" << std::endl;
+        std::cout << "Error in yfs_client::read: _get" << std::endl;
         lc->release(ino);
         return RPCERR;
     }
@@ -566,9 +570,9 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     extent_protocol::status status;
     std::string buf;
 
-    status = ec->get(ino, buf);
+    status = _get(ino, buf);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::read: ec->get" << std::endl;
+        std::cout << "Error in yfs_client::read: _get" << std::endl;
         lc->release(ino);
         return RPCERR;
     }
@@ -583,9 +587,9 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
         for (off_t i = off; i < off + size; ++i) {
             write_buf[i] = data[i - off];
         }
-        status = ec->put(ino, write_buf);
+        status = _put(ino, write_buf);
         if (status != extent_protocol::OK) {
-            std::cout << "Error in yfs_client::read: ec->put 0" << std::endl;
+            std::cout << "Error in yfs_client::read: _put 0" << std::endl;
             lc->release(ino);
             return RPCERR;
         }
@@ -599,9 +603,9 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
         for (off_t i = off; i < off + size; ++i) {
             write_buf[i] = data[i - off];
         }
-        status = ec->put(ino, write_buf);
+        status = _put(ino, write_buf);
         if (status != extent_protocol::OK) {
-            std::cout << "Error in yfs_client::read: ec->put 1" << std::endl;
+            std::cout << "Error in yfs_client::read: _put 1" << std::endl;
             lc->release(ino);
             return RPCERR;
         }
@@ -619,9 +623,9 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
         for (off_t i = off; i < off + size; ++i) {
             write_buf[i] = data[i - off];
         }
-        status = ec->put(ino, write_buf);
+        status = _put(ino, write_buf);
         if (status != extent_protocol::OK) {
-            std::cout << "Error in yfs_client::read: ec->put 2" << std::endl;
+            std::cout << "Error in yfs_client::read: _put 2" << std::endl;
             lc->release(ino);
             return RPCERR;
         }
@@ -647,9 +651,9 @@ int yfs_client::unlink(inum parent,const char *name)
     extent_protocol::status status;
     std::string buf;
     std::list<dirent> dirent_list;
-    status = ec->get(parent, buf);
+    status = _get(parent, buf);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::unlink: ec->get(parent, buf)" << std::endl;
+        std::cout << "Error in yfs_client::unlink: _get(parent, buf)" << std::endl;
         lc->release(parent);
         return RPCERR;
     }
@@ -671,14 +675,14 @@ int yfs_client::unlink(inum parent,const char *name)
     }
 
     // remove the file
-    ec->remove(target);
+    _remove(target);
 
     // update the parent directory content
     dirent d = *it;
     dirent_list.remove(d);
     std::string write_buf;
     list2directory(write_buf, dirent_list);
-    ec->put(parent, write_buf);
+    _put(parent, write_buf);
     lc->release(parent);
     return r;
 }
@@ -693,7 +697,7 @@ int yfs_client::create_symlink(inum parent, const char* link, mode_t mode, const
     {
         std::string local_buf;
         std::list<dirent> dirent_list;
-        ec->get(parent, local_buf);
+        _get(parent, local_buf);
         directory2list(local_buf, dirent_list);
         for (std::list<dirent>::iterator it = dirent_list.begin(); it != dirent_list.end(); ++it) {
             if (it->name.compare(name) == 0) {
@@ -709,9 +713,9 @@ int yfs_client::create_symlink(inum parent, const char* link, mode_t mode, const
         return yfs_client::EXIST;
     }
     extent_protocol::extentid_t id;
-    extent_protocol::status status = ec->create(extent_protocol::T_SYMLINK, id);
+    extent_protocol::status status = _create(extent_protocol::T_SYMLINK, id);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::create_symlink: ec->create(extent_protocol::T_SYMLINK, id)" << std::endl;
+        std::cout << "Error in yfs_client::create_symlink: _create(extent_protocol::T_SYMLINK, id)" << std::endl;
         lc->release(parent);
         return RPCERR;
     }
@@ -723,10 +727,10 @@ int yfs_client::create_symlink(inum parent, const char* link, mode_t mode, const
     std::string buf;
     std::list<dirent> dirent_list;
     std::string write_buf;
-    status = ec->get(parent, buf);
+    status = _get(parent, buf);
 
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::create_symlink: ec->get(parent, buf)" << std::endl;
+        std::cout << "Error in yfs_client::create_symlink: _get(parent, buf)" << std::endl;
         lc->release(parent);
         return RPCERR;
     }
@@ -737,18 +741,18 @@ int yfs_client::create_symlink(inum parent, const char* link, mode_t mode, const
     d.name = name;
     dirent_list.push_back(d);
     list2directory(write_buf, dirent_list);
-    status = ec->put(parent, write_buf);
+    status = _put(parent, write_buf);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::create_symlink: ec->put(parent, write_buf)" << std::endl;
+        std::cout << "Error in yfs_client::create_symlink: _put(parent, write_buf)" << std::endl;
         lc->release(parent);
         return RPCERR;
     }
 
     // write the link as the file content
     std::string file_content(link);
-    status = ec->put(id, file_content);
+    status = _put(id, file_content);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::create_symlink: ec->put(id, file_content)" << std::endl;
+        std::cout << "Error in yfs_client::create_symlink: _put(id, file_content)" << std::endl;
         lc->release(parent);
         return RPCERR;
     }
@@ -761,12 +765,69 @@ int yfs_client::read_symlink(inum ino, std::string &link) {
     lc->acquire(ino);
 
     extent_protocol::status status;
-    status = ec->get(ino, link);
+    status = _get(ino, link);
     if (status != extent_protocol::OK) {
-        std::cout << "Error in yfs_client::read_symlink: ec->get(ino, link)" << std::endl;
+        std::cout << "Error in yfs_client::read_symlink: _get(ino, link)" << std::endl;
         lc->release(ino);
         return RPCERR;
     }
     lc->release(ino);
     return OK;
+}
+
+extent_protocol::status yfs_client::_create(uint32_t type, extent_protocol::extentid_t &id) {
+    extent_protocol::status status = -1;
+    while (status != extent_protocol::OK) {
+        status = ec->create(type, id);
+    }
+    return status;
+}
+
+extent_protocol::status yfs_client::_get(extent_protocol::extentid_t eid, std::string &buf) {
+    local_file_cache_entry* entry = cache->getCache(eid);
+    if (!entry || !entry->valid) {
+        printf("Error in yfs_client::_get: No such entry");
+        return extent_protocol::RPCERR;
+    }
+    buf.assign(entry->content);
+    return extent_protocol::OK;
+}
+
+extent_protocol::status yfs_client::_getattr(extent_protocol::extentid_t eid, extent_protocol::attr &attr) {
+    local_file_cache_entry* entry = cache->getCache(eid);
+    if (!entry || !entry->valid) {
+        printf("Error in yfs_client::_getattr: No such entry");
+        return extent_protocol::RPCERR;
+    }
+    attr.atime = entry->attributes.atime;
+    attr.ctime = entry->attributes.ctime;
+    attr.mtime = entry->attributes.mtime;
+    attr.size = entry->attributes.size;
+    attr.type = entry->attributes.type;
+    return extent_protocol::OK;
+}
+
+extent_protocol::status yfs_client::_put(extent_protocol::extentid_t eid, std::string buf) {
+    local_file_cache_entry* entry = cache->getCache(eid);
+    if (!entry || !entry->valid) {
+        printf("Error in yfs_client::_put: No such entry");
+        return extent_protocol::RPCERR;
+    }
+    entry->content.assign(buf);
+    entry->modified = true;
+    entry->attributes.atime = time(NULL);
+    entry->attributes.ctime = time(NULL);
+    entry->attributes.mtime = time(NULL);
+    return extent_protocol::OK;
+}
+
+extent_protocol::status yfs_client::_remove(extent_protocol::extentid_t eid) {
+    extent_protocol::status status = -1;
+    while (status != extent_protocol::OK) {
+        status = ec->remove(eid);
+    }
+    if (cache->getCache(eid) != NULL) {
+        cache->deleteCache(eid);
+    }
+    return status;
 }

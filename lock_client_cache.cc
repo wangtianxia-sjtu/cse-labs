@@ -30,9 +30,10 @@ lock_client_cache::lock_client_cache(std::string xdst,
   rlsrpc->reg(rlock_protocol::revoke, this, &lock_client_cache::revoke_handler);
   rlsrpc->reg(rlock_protocol::retry, this, &lock_client_cache::retry_handler);
   ec = NULL;
+  cache = NULL;
 }
 
-lock_client_cache::lock_client_cache(std::string xdst, extent_client* _ec, 
+lock_client_cache::lock_client_cache(std::string xdst, extent_client* _ec, local_cache* _cache,
 				     class lock_release_user *_lu)
   : lock_client(xdst), lu(_lu)
 {
@@ -50,6 +51,7 @@ lock_client_cache::lock_client_cache(std::string xdst, extent_client* _ec,
   rlsrpc->reg(rlock_protocol::revoke, this, &lock_client_cache::revoke_handler);
   rlsrpc->reg(rlock_protocol::retry, this, &lock_client_cache::retry_handler);
   ec = _ec;
+  cache = _cache;
 }
 
 lock_protocol::status
@@ -84,6 +86,42 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
     pthread_mutex_lock(&lock_client_mutex);
     this_lock->stat = lock_client_cache::LOCKED;
     this_lock->acquiring = false;
+    
+    // get file from file server
+
+    std::string content;
+    extent_protocol::attr attributes;
+    extent_protocol::status status = -1;
+    while (status != extent_protocol::OK) {
+      status = ec->getattr(lid, attributes);
+    }
+    status = -1;
+    while (status != extent_protocol::OK) {
+      status = ec->get(lid, content);
+    }
+    local_file_cache_entry* entry = NULL;
+    entry = cache->getCache(lid);
+    if (entry == NULL) {
+      entry = new local_file_cache_entry();
+      entry->attributes.atime = attributes.atime;
+      entry->attributes.ctime = attributes.ctime;
+      entry->attributes.mtime = attributes.mtime;
+      entry->attributes.size = attributes.size;
+      entry->attributes.type = attributes.type;
+      entry->content = content;
+      cache->addCache(lid, entry);
+    }
+    else {
+      entry->attributes.atime = attributes.atime;
+      entry->attributes.ctime = attributes.ctime;
+      entry->attributes.mtime = attributes.mtime;
+      entry->attributes.size = attributes.size;
+      entry->attributes.type = attributes.type;
+      entry->content = content;
+      entry->modified = false;
+      entry->valid = true;
+    }
+    
     pthread_mutex_unlock(&lock_client_mutex);
     return lock_protocol::OK;
   }
@@ -144,6 +182,16 @@ lock_client_cache::revoke_handler(lock_protocol::lockid_t lid,
   lock_metadata_client* this_lock = locks[lid];
   if (this_lock->stat == lock_client_cache::FREE) {
     this_lock->stat = lock_client_cache::NONE;
+    local_file_cache_entry* entry = NULL;
+    if (NULL != (entry = cache->getCache(lid))) {
+      if (entry->modified) {
+        extent_protocol::status status = -1;
+        while(status != extent_protocol::OK) {
+          status = ec->put(lid, entry->content);
+        }
+      }
+      entry->valid = false;
+    }
     pthread_mutex_unlock(&lock_client_mutex);
     return lock_protocol::REVOKE_SUCCEEDED;
   }

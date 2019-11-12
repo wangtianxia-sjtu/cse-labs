@@ -12,10 +12,12 @@
 #include <map>
 #include <pthread.h>
 
+class local_cache;
 
 class yfs_client {
   extent_client *ec;
   lock_client *lc;
+  local_cache *cache;
  public:
 
   typedef unsigned long long inum;
@@ -78,8 +80,13 @@ class local_file_cache_entry {
   public:
     std::string content;
     bool valid;
-    bool isFile;
-    yfs_client::fileinfo fileinfo;
+    bool modified;
+    extent_protocol::attr attributes;
+
+    local_file_cache_entry() {
+      valid = true;
+      modified = false;
+    }
 };
 
 class local_cache {
@@ -97,8 +104,28 @@ class local_cache {
       if (cache_map.find(inode) == cache_map.end()) {
         return NULL;
       }
+      local_file_cache_entry* result = cache_map[inode];
       pthread_mutex_unlock(&lock);
-      return cache_map[inode];
+      return result;
+    }
+
+    void addCache(yfs_client::inum inode, local_file_cache_entry* entry) {
+      pthread_mutex_lock(&lock);
+      if (cache_map.find(inode) != cache_map.end()) {
+        return;
+      }
+      cache_map[inode] = entry;
+      pthread_mutex_unlock(&lock);
+    }
+
+    void deleteCache(yfs_client::inum inode) {
+      pthread_mutex_lock(&lock);
+      std::map<yfs_client::inum, local_file_cache_entry*>::iterator it;
+      if ((it = cache_map.find(inode)) == cache_map.end())
+        return;
+      else
+        cache_map.erase(it);
+      pthread_mutex_unlock(&lock);
     }
 };
 
