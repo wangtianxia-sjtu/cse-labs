@@ -86,32 +86,43 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
     pthread_mutex_lock(&lock_client_mutex);
     this_lock->stat = lock_client_cache::LOCKED;
     this_lock->acquiring = false;
+
+    printf("getting lock from server with lid = %d\n", lid);
     
     // get file from file server
-
+    if (ec != NULL && cache != NULL )
+    {
     std::string content;
     extent_protocol::attr attributes;
     extent_protocol::status status = -1;
     while (status != extent_protocol::OK) {
       status = ec->getattr(lid, attributes);
+      printf("getting file attr from file server with lid = %d\n", lid);
     }
     status = -1;
     while (status != extent_protocol::OK) {
       status = ec->get(lid, content);
+      printf("getting file from file server with lid = %d\n", lid);
     }
     local_file_cache_entry* entry = NULL;
     entry = cache->getCache(lid);
+    printf("control flow reaches after cache->getCache\n");
     if (entry == NULL) {
+      printf("control flow enters if\n");
       entry = new local_file_cache_entry();
+      printf("control flow enters if2\n");
       entry->attributes.atime = attributes.atime;
       entry->attributes.ctime = attributes.ctime;
       entry->attributes.mtime = attributes.mtime;
       entry->attributes.size = attributes.size;
       entry->attributes.type = attributes.type;
       entry->content = content;
+      printf("control flow reaches before cache->addCache\n");
       cache->addCache(lid, entry);
+      printf("control flow reaches after cache->addCache\n");
     }
     else {
+      printf("control flow enters else\n");
       entry->attributes.atime = attributes.atime;
       entry->attributes.ctime = attributes.ctime;
       entry->attributes.mtime = attributes.mtime;
@@ -121,8 +132,10 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
       entry->modified = false;
       entry->valid = true;
     }
-    
+  }
+    printf("control flow reaches before pthread_mutex_unlock(&lock_client_mutex)\n");
     pthread_mutex_unlock(&lock_client_mutex);
+    printf("control flow reaches after pthread_mutex_unlock(&lock_client_mutex)\n");
     return lock_protocol::OK;
   }
 
@@ -182,16 +195,20 @@ lock_client_cache::revoke_handler(lock_protocol::lockid_t lid,
   lock_metadata_client* this_lock = locks[lid];
   if (this_lock->stat == lock_client_cache::FREE) {
     this_lock->stat = lock_client_cache::NONE;
-    local_file_cache_entry* entry = NULL;
-    if (NULL != (entry = cache->getCache(lid))) {
-      if (entry->modified) {
-        extent_protocol::status status = -1;
-        while(status != extent_protocol::OK) {
-          status = ec->put(lid, entry->content);
-        }
+    if (cache != NULL && ec != NULL)
+    {
+      local_file_cache_entry* entry = NULL;
+      if (NULL != (entry = cache->getCache(lid))) {
+        if (entry->modified) {
+          extent_protocol::status status = -1;
+          while(status != extent_protocol::OK) {
+            status = ec->put(lid, entry->content);
+          }
       }
       entry->valid = false;
+      }
     }
+    printf("release lock with lid = %d\n", lid);
     pthread_mutex_unlock(&lock_client_mutex);
     return lock_protocol::REVOKE_SUCCEEDED;
   }

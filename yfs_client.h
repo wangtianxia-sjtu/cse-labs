@@ -102,6 +102,7 @@ class local_cache {
     local_file_cache_entry* getCache(yfs_client::inum inode) {
       pthread_mutex_lock(&lock);
       if (cache_map.find(inode) == cache_map.end()) {
+        pthread_mutex_unlock(&lock);
         return NULL;
       }
       local_file_cache_entry* result = cache_map[inode];
@@ -112,6 +113,7 @@ class local_cache {
     void addCache(yfs_client::inum inode, local_file_cache_entry* entry) {
       pthread_mutex_lock(&lock);
       if (cache_map.find(inode) != cache_map.end()) {
+        pthread_mutex_unlock(&lock);
         return;
       }
       cache_map[inode] = entry;
@@ -121,8 +123,10 @@ class local_cache {
     void deleteCache(yfs_client::inum inode) {
       pthread_mutex_lock(&lock);
       std::map<yfs_client::inum, local_file_cache_entry*>::iterator it;
-      if ((it = cache_map.find(inode)) == cache_map.end())
+      if ((it = cache_map.find(inode)) == cache_map.end()) {
+        pthread_mutex_unlock(&lock);
         return;
+      }
       else
         cache_map.erase(it);
       pthread_mutex_unlock(&lock);

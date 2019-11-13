@@ -26,10 +26,10 @@ yfs_client::yfs_client(std::string extent_dst, std::string lock_dst)
   ec = new extent_client(extent_dst);
   cache = new local_cache();
   lc = new lock_client_cache(lock_dst, ec, cache);
-  lc->acquire(1);
-  if (_put(1, "") != extent_protocol::OK)
+  // lc->acquire(1);
+  if (ec->put(1, "") != extent_protocol::OK)
       printf("error init root dir\n"); // XYB: init root dir
-  lc->release(1);
+  // lc->release(1);
 }
 
 
@@ -56,6 +56,8 @@ yfs_client::isfile(inum inum)
     extent_protocol::attr a;
 
     lc->acquire(inum);
+
+    printf("get lock %d in isfile\n", inum);
 
     if (_getattr(inum, a) != extent_protocol::OK) {
         printf("error getting attr\n");
@@ -87,6 +89,8 @@ yfs_client::isdir(inum inum)
 
     lc->acquire(inum);
 
+    printf("get lock %d in isdir\n", inum);
+
     if (_getattr(inum, a) != extent_protocol::OK) {
         printf("error getting attr\n");
         lc->release(inum);
@@ -108,6 +112,8 @@ bool yfs_client::issymlink(inum inum)
     extent_protocol::attr a;
 
     lc->acquire(inum);
+
+    printf("get lock %d in issymlink\n", inum);
 
     if (_getattr(inum, a) != extent_protocol::OK) {
         printf("error getting attr\n");
@@ -131,6 +137,8 @@ yfs_client::getfile(inum inum, fileinfo &fin)
     int r = OK;
 
     lc->acquire(inum);
+
+    printf("get lock %d in getfile\n", inum);
 
     printf("getfile %016llx\n", inum);
     extent_protocol::attr a;
@@ -156,6 +164,8 @@ yfs_client::getdir(inum inum, dirinfo &din)
     int r = OK;
 
     lc->acquire(inum);
+
+    printf("get lock %d in getdir\n", inum);
 
     printf("getdir %016llx\n", inum);
     extent_protocol::attr a;
@@ -258,6 +268,8 @@ yfs_client::setattr(inum ino, size_t size)
 
     lc->acquire(ino);
 
+    printf("get lock %d in setattr\n", ino);
+
     /*
      * your code goes here.
      * note: get the content of inode ino, and modify its content
@@ -323,6 +335,8 @@ yfs_client::create(inum parent, const char *name, mode_t mode, inum &ino_out)
     int r = OK;
 
     lc->acquire(parent);
+
+    printf("get lock %d in create\n", parent);
 
     /*
      * your code goes here.
@@ -394,6 +408,8 @@ yfs_client::mkdir(inum parent, const char *name, mode_t mode, inum &ino_out)
 
     lc->acquire(parent);
 
+    printf("get lock %d in mkdir\n", parent);
+
     /*
      * your code goes here.
      * note: lookup is what you need to check if directory exist;
@@ -464,6 +480,8 @@ yfs_client::lookup(inum parent, const char *name, bool &found, inum &ino_out)
 
     lc->acquire(parent);
 
+    printf("get lock %d in lookup\n", parent);
+
     /*
      * your code goes here.
      * note: lookup file from parent dir according to name;
@@ -493,6 +511,8 @@ yfs_client::readdir(inum dir, std::list<dirent> &list)
     int r = OK;
     
     lc->acquire(dir);
+
+    printf("get lock %d in readdir\n", dir);
 
     /*
      * your code goes here.
@@ -534,6 +554,8 @@ yfs_client::read(inum ino, size_t size, off_t off, std::string &data)
 
     lc->acquire(ino);
 
+    printf("get lock %d in read\n", ino);
+
     /*
      * your code goes here.
      * note: read using ec->get().
@@ -561,6 +583,8 @@ yfs_client::write(inum ino, size_t size, off_t off, const char *data,
     int r = OK;
 
     lc->acquire(ino);
+
+    printf("get lock %d in write\n", ino);
 
     /*
      * your code goes here.
@@ -643,6 +667,8 @@ int yfs_client::unlink(inum parent,const char *name)
 
     lc->acquire(parent);
 
+    printf("get lock %d in unlink\n", parent);
+
     /*
      * your code goes here.
      * note: you should remove the file using ec->remove,
@@ -690,6 +716,8 @@ int yfs_client::unlink(inum parent,const char *name)
 int yfs_client::create_symlink(inum parent, const char* link, mode_t mode, const char* name, inum& ino_out) {
 
     lc->acquire(parent);
+
+    printf("get lock %d in create_symlink\n", parent);
 
     bool found = false;
 
@@ -764,6 +792,8 @@ int yfs_client::read_symlink(inum ino, std::string &link) {
 
     lc->acquire(ino);
 
+    printf("get lock %d in read_symlink\n", ino);
+
     extent_protocol::status status;
     status = _get(ino, link);
     if (status != extent_protocol::OK) {
@@ -776,28 +806,120 @@ int yfs_client::read_symlink(inum ino, std::string &link) {
 }
 
 extent_protocol::status yfs_client::_create(uint32_t type, extent_protocol::extentid_t &id) {
+    printf("calling _create with type %d\n", type);
     extent_protocol::status status = -1;
     while (status != extent_protocol::OK) {
         status = ec->create(type, id);
     }
+    printf("calling lc->acquire with type %d in _create\n", id);
+    lc->acquire(id);
+    printf("acquired lock %d in _create\n", id);
+    _put(id, "");
+    printf("releasing lock %d in _create\n", id);
+    lc->release(id);
+    printf("released lock %d in _create\n", id);
     return status;
 }
 
 extent_protocol::status yfs_client::_get(extent_protocol::extentid_t eid, std::string &buf) {
+    printf("Calling _get with %d\n", eid);
     local_file_cache_entry* entry = cache->getCache(eid);
     if (!entry || !entry->valid) {
-        printf("Error in yfs_client::_get: No such entry");
-        return extent_protocol::RPCERR;
+        printf("In yfs_client::_get: No such entry\n");
+        if (!entry) {
+            printf("In yfs_client::_get: No such entry (null)\n");
+            extent_protocol::status status = -1;
+            std::string local_buf;
+            extent_protocol::attr attributes;
+            entry = new local_file_cache_entry;
+            while (status != extent_protocol::OK) {
+                status = ec->get(eid, local_buf);
+            }
+            status = -1;
+            while (status != extent_protocol::OK) {
+                status = ec->getattr(eid, attributes);
+            }
+            entry->content.assign(local_buf);
+            entry->attributes.atime = attributes.atime;
+            entry->attributes.ctime = attributes.ctime;
+            entry->attributes.mtime = attributes.mtime;
+            entry->attributes.size = attributes.size;
+            entry->attributes.type = attributes.type;
+            cache->addCache(eid, entry);
+        }
+        else {
+            extent_protocol::status status = -1;
+            std::string local_buf;
+            extent_protocol::attr attributes;
+            while (status != extent_protocol::OK) {
+                status = ec->get(eid, local_buf);
+            }
+            status = -1;
+            while (status != extent_protocol::OK) {
+                status = ec->getattr(eid, attributes);
+            }
+            entry->content.assign(local_buf);
+            entry->attributes.atime = attributes.atime;
+            entry->attributes.ctime = attributes.ctime;
+            entry->attributes.mtime = attributes.mtime;
+            entry->attributes.size = attributes.size;
+            entry->attributes.type = attributes.type;
+            entry->valid = true;
+            entry->modified = false;
+        }
+        printf("Recover from yfs_client::_get: No such entry\n");
     }
     buf.assign(entry->content);
     return extent_protocol::OK;
 }
 
 extent_protocol::status yfs_client::_getattr(extent_protocol::extentid_t eid, extent_protocol::attr &attr) {
+    printf("Calling _getattr with %d\n", eid);
     local_file_cache_entry* entry = cache->getCache(eid);
     if (!entry || !entry->valid) {
-        printf("Error in yfs_client::_getattr: No such entry");
-        return extent_protocol::RPCERR;
+        printf("Error in yfs_client::_getattr: No such entry\n");
+        if (!entry) {
+            printf("Error in yfs_client::_getattr: No such entry (null)\n");
+            extent_protocol::status status = -1;
+            std::string local_buf;
+            extent_protocol::attr attributes;
+            entry = new local_file_cache_entry;
+            while (status != extent_protocol::OK) {
+                status = ec->get(eid, local_buf);
+            }
+            status = -1;
+            while (status != extent_protocol::OK) {
+                status = ec->getattr(eid, attributes);
+            }
+            entry->content.assign(local_buf);
+            entry->attributes.atime = attributes.atime;
+            entry->attributes.ctime = attributes.ctime;
+            entry->attributes.mtime = attributes.mtime;
+            entry->attributes.size = attributes.size;
+            entry->attributes.type = attributes.type;
+            cache->addCache(eid, entry);
+        }
+        else {
+            extent_protocol::status status = -1;
+            std::string local_buf;
+            extent_protocol::attr attributes;
+            while (status != extent_protocol::OK) {
+                status = ec->get(eid, local_buf);
+            }
+            status = -1;
+            while (status != extent_protocol::OK) {
+                status = ec->getattr(eid, attributes);
+            }
+            entry->content.assign(local_buf);
+            entry->attributes.atime = attributes.atime;
+            entry->attributes.ctime = attributes.ctime;
+            entry->attributes.mtime = attributes.mtime;
+            entry->attributes.size = attributes.size;
+            entry->attributes.type = attributes.type;
+            entry->valid = true;
+            entry->modified = false;
+        }
+        printf("Recover from error in yfs_client::_getattr: No such entry\n");
     }
     attr.atime = entry->attributes.atime;
     attr.ctime = entry->attributes.ctime;
@@ -808,20 +930,64 @@ extent_protocol::status yfs_client::_getattr(extent_protocol::extentid_t eid, ex
 }
 
 extent_protocol::status yfs_client::_put(extent_protocol::extentid_t eid, std::string buf) {
+    printf("Calling _put with %d and %s\n", eid, buf.c_str());
     local_file_cache_entry* entry = cache->getCache(eid);
     if (!entry || !entry->valid) {
-        printf("Error in yfs_client::_put: No such entry");
-        return extent_protocol::RPCERR;
+        printf("Error in yfs_client::_put: No such entry\n");
+        if (!entry) {
+            printf("Error in yfs_client::_put: No such entry (null)\n");
+            extent_protocol::status status = -1;
+            std::string local_buf;
+            extent_protocol::attr attributes;
+            entry = new local_file_cache_entry;
+            while (status != extent_protocol::OK) {
+                status = ec->get(eid, local_buf);
+            }
+            status = -1;
+            while (status != extent_protocol::OK) {
+                status = ec->getattr(eid, attributes);
+            }
+            entry->content.assign(local_buf);
+            entry->attributes.atime = attributes.atime;
+            entry->attributes.ctime = attributes.ctime;
+            entry->attributes.mtime = attributes.mtime;
+            entry->attributes.size = attributes.size;
+            entry->attributes.type = attributes.type;
+            cache->addCache(eid, entry);
+        }
+        else {
+            extent_protocol::status status = -1;
+            std::string local_buf;
+            extent_protocol::attr attributes;
+            while (status != extent_protocol::OK) {
+                status = ec->get(eid, local_buf);
+            }
+            status = -1;
+            while (status != extent_protocol::OK) {
+                status = ec->getattr(eid, attributes);
+            }
+            entry->content.assign(local_buf);
+            entry->attributes.atime = attributes.atime;
+            entry->attributes.ctime = attributes.ctime;
+            entry->attributes.mtime = attributes.mtime;
+            entry->attributes.size = attributes.size;
+            entry->attributes.type = attributes.type;
+            entry->valid = true;
+            entry->modified = false;
+        }
+        printf("Recover from error in yfs_client::_put: No such entry\n");
     }
     entry->content.assign(buf);
     entry->modified = true;
     entry->attributes.atime = time(NULL);
     entry->attributes.ctime = time(NULL);
     entry->attributes.mtime = time(NULL);
+    entry->attributes.size = buf.size();
     return extent_protocol::OK;
 }
 
 extent_protocol::status yfs_client::_remove(extent_protocol::extentid_t eid) {
+    printf("Calling _remove with %d\n", eid);
     extent_protocol::status status = -1;
     while (status != extent_protocol::OK) {
         status = ec->remove(eid);
