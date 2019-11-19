@@ -23,6 +23,7 @@ class extent_client {
 				                          extent_protocol::attr &a);
   extent_protocol::status put(extent_protocol::extentid_t eid, std::string buf);
   extent_protocol::status remove(extent_protocol::extentid_t eid);
+  extent_protocol::status getattr_content(extent_protocol::extentid_t eid, extent_protocol::attr_content &a);
 };
 
 #endif 

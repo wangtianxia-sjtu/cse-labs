@@ -78,3 +78,30 @@ int extent_server::remove(extent_protocol::extentid_t id, int &)
   return extent_protocol::OK;
 }
 
+int extent_server::getattr_content(extent_protocol::extentid_t id, extent_protocol::attr_content &a)
+{
+  printf("extent_server: getattr_content %lld\n", id);
+
+  id &= 0x7fffffff;
+
+  extent_protocol::attr attr;
+  memset(&attr, 0, sizeof(attr));
+
+  im->getattr(id, attr);
+
+  a.a = attr;
+
+  int size = 0;
+  char *cbuf = NULL;
+
+  im->read_file(id, &cbuf, &size);
+  if (size == 0)
+    a.content = "";
+  else {
+    a.content.assign(cbuf, size);
+    free(cbuf);
+  }
+  printf("extent_server: getattr_content %lld finished\n", id);
+  return extent_protocol::OK;
+}
+

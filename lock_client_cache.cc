@@ -95,15 +95,14 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
     std::string content;
     extent_protocol::attr attributes;
     extent_protocol::status status = -1;
-    while (status != extent_protocol::OK) {
-      status = ec->getattr(lid, attributes);
-      printf("getting file attr from file server with lid = %d\n", lid);
-    }
+    extent_protocol::attr_content attr_content;
     status = -1;
     while (status != extent_protocol::OK) {
-      status = ec->get(lid, content);
-      printf("getting file from file server with lid = %d\n", lid);
+      status = ec->getattr_content(lid, attr_content);
+      printf("getting file and attr from file server with lid = %d\n", lid);
     }
+    content = attr_content.content;
+    attributes = attr_content.a;
     local_file_cache_entry* entry = NULL;
     entry = cache->getCache(lid);
     printf("control flow reaches after cache->getCache\n");
