@@ -68,6 +68,35 @@ int extent_server::getattr(extent_protocol::extentid_t id, extent_protocol::attr
   return extent_protocol::OK;
 }
 
+int extent_server::getattr_content(extent_protocol::extentid_t id, extent_protocol::attr_content &a)
+{
+  printf("extent_server: getattr_content %lld\n", id);
+
+  id &= 0x7fffffff;
+
+  extent_protocol::attr_content attr_content;
+  extent_protocol::attr attr;
+  memset(&attr, 0, sizeof(attr));
+  memset(&attr_content, 0, sizeof(attr_content));
+
+  im->getattr(id, attr);
+
+  attr_content.a = attr;
+
+  int size = 0;
+  char *cbuf = NULL;
+
+  im->read_file(id, &cbuf, &size);
+  if (size == 0)
+    attr_content.content = "";
+  else {
+    attr_content.content.assign(cbuf, size);
+    free(cbuf);
+  }
+  printf("extent_server: getattr_content %lld finished\n", id);
+  return extent_protocol::OK;
+}
+
 int extent_server::remove(extent_protocol::extentid_t id, int &)
 {
   printf("extent_server: write %lld\n", id);

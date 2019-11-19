@@ -831,14 +831,15 @@ extent_protocol::status yfs_client::_get(extent_protocol::extentid_t eid, std::s
             extent_protocol::status status = -1;
             std::string local_buf;
             extent_protocol::attr attributes;
+            extent_protocol::attr_content attr_content;
             entry = new local_file_cache_entry;
+            printf("control flow reaches before ec->getattr_content in _get");
             while (status != extent_protocol::OK) {
-                status = ec->get(eid, local_buf);
+                status = ec->getattr_content(eid, attr_content);
             }
-            status = -1;
-            while (status != extent_protocol::OK) {
-                status = ec->getattr(eid, attributes);
-            }
+            printf("control flow reaches after ec->getattr_content in _get");
+            local_buf = attr_content.content;
+            attributes = attr_content.a;
             entry->content.assign(local_buf);
             entry->attributes.atime = attributes.atime;
             entry->attributes.ctime = attributes.ctime;
@@ -851,13 +852,14 @@ extent_protocol::status yfs_client::_get(extent_protocol::extentid_t eid, std::s
             extent_protocol::status status = -1;
             std::string local_buf;
             extent_protocol::attr attributes;
+            extent_protocol::attr_content attr_content;
+            printf("control flow reaches before ec->getattr_content in _get");
             while (status != extent_protocol::OK) {
-                status = ec->get(eid, local_buf);
+                status = ec->getattr_content(eid, attr_content);
             }
-            status = -1;
-            while (status != extent_protocol::OK) {
-                status = ec->getattr(eid, attributes);
-            }
+            printf("control flow reaches after ec->getattr_content in _get");
+            local_buf = attr_content.content;
+            attributes = attr_content.a;
             entry->content.assign(local_buf);
             entry->attributes.atime = attributes.atime;
             entry->attributes.ctime = attributes.ctime;
@@ -883,14 +885,13 @@ extent_protocol::status yfs_client::_getattr(extent_protocol::extentid_t eid, ex
             extent_protocol::status status = -1;
             std::string local_buf;
             extent_protocol::attr attributes;
+            extent_protocol::attr_content attr_content;
             entry = new local_file_cache_entry;
             while (status != extent_protocol::OK) {
-                status = ec->get(eid, local_buf);
+                status = ec->getattr_content(eid, attr_content);
             }
-            status = -1;
-            while (status != extent_protocol::OK) {
-                status = ec->getattr(eid, attributes);
-            }
+            local_buf = attr_content.content;
+            attributes = attr_content.a;
             entry->content.assign(local_buf);
             entry->attributes.atime = attributes.atime;
             entry->attributes.ctime = attributes.ctime;
@@ -903,13 +904,12 @@ extent_protocol::status yfs_client::_getattr(extent_protocol::extentid_t eid, ex
             extent_protocol::status status = -1;
             std::string local_buf;
             extent_protocol::attr attributes;
+            extent_protocol::attr_content attr_content;
             while (status != extent_protocol::OK) {
-                status = ec->get(eid, local_buf);
+                status = ec->getattr_content(eid, attr_content);
             }
-            status = -1;
-            while (status != extent_protocol::OK) {
-                status = ec->getattr(eid, attributes);
-            }
+            local_buf = attr_content.content;
+            attributes = attr_content.a;
             entry->content.assign(local_buf);
             entry->attributes.atime = attributes.atime;
             entry->attributes.ctime = attributes.ctime;
@@ -939,14 +939,13 @@ extent_protocol::status yfs_client::_put(extent_protocol::extentid_t eid, std::s
             extent_protocol::status status = -1;
             std::string local_buf;
             extent_protocol::attr attributes;
+            extent_protocol::attr_content attr_content;
             entry = new local_file_cache_entry;
             while (status != extent_protocol::OK) {
-                status = ec->get(eid, local_buf);
+                status = ec->getattr_content(eid, attr_content);
             }
-            status = -1;
-            while (status != extent_protocol::OK) {
-                status = ec->getattr(eid, attributes);
-            }
+            local_buf = attr_content.content;
+            attributes = attr_content.a;
             entry->content.assign(local_buf);
             entry->attributes.atime = attributes.atime;
             entry->attributes.ctime = attributes.ctime;
@@ -959,13 +958,12 @@ extent_protocol::status yfs_client::_put(extent_protocol::extentid_t eid, std::s
             extent_protocol::status status = -1;
             std::string local_buf;
             extent_protocol::attr attributes;
+            extent_protocol::attr_content attr_content;
             while (status != extent_protocol::OK) {
-                status = ec->get(eid, local_buf);
+                status = ec->getattr_content(eid, attr_content);
             }
-            status = -1;
-            while (status != extent_protocol::OK) {
-                status = ec->getattr(eid, attributes);
-            }
+            local_buf = attr_content.content;
+            attributes = attr_content.a;
             entry->content.assign(local_buf);
             entry->attributes.atime = attributes.atime;
             entry->attributes.ctime = attributes.ctime;

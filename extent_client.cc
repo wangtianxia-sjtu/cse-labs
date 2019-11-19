@@ -70,4 +70,12 @@ extent_client::remove(extent_protocol::extentid_t eid)
   return ret;
 }
 
+extent_protocol::status
+extent_client::getattr_content(extent_protocol::extentid_t eid, extent_protocol::attr_content &a)
+{
+  extent_protocol::status ret = extent_protocol::OK;
+  ret = cl->call(extent_protocol::getattr_content, eid, a);
+  return ret;
+}
+
 

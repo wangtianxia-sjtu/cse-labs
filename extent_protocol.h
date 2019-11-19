@@ -15,7 +15,8 @@ class extent_protocol {
     get,
     getattr,
     remove,
-    create
+    create,
+    getattr_content
   };
 
   enum types {
@@ -30,6 +31,11 @@ class extent_protocol {
     unsigned int mtime;
     unsigned int ctime;
     unsigned int size;
+  };
+
+  struct attr_content {
+    attr a;
+    std::string content;
   };
 };
 
@@ -52,6 +58,20 @@ operator<<(marshall &m, extent_protocol::attr a)
   m << a.mtime;
   m << a.ctime;
   m << a.size;
+  return m;
+}
+
+inline unmarshall &
+operator>>(unmarshall &u, extent_protocol::attr_content &a) {
+  u >> a.a;
+  u >> a.content;
+  return u;
+}
+
+inline marshall &
+operator<<(marshall &m, extent_protocol::attr_content a) {
+  m << a.a;
+  m << a.content;
   return m;
 }
 

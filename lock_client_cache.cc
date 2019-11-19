@@ -87,23 +87,27 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
     this_lock->stat = lock_client_cache::LOCKED;
     this_lock->acquiring = false;
 
-    printf("getting lock from server with lid = %d\n", lid);
+    printf("getting lock from server with lid = %d in acquire\n", lid);
+
+    printf("prepare to get file from file server");
     
     // get file from file server
     if (ec != NULL && cache != NULL )
     {
+    printf("ec != NULL && cache != NULL\n");
     std::string content;
+    extent_protocol::attr_content attr_content;
     extent_protocol::attr attributes;
     extent_protocol::status status = -1;
+    printf("control flow reaches before ec->getattr_content in acquire");
     while (status != extent_protocol::OK) {
-      status = ec->getattr(lid, attributes);
-      printf("getting file attr from file server with lid = %d\n", lid);
+      // status = ec->getattr(lid, attributes);
+      status = ec->getattr_content(lid, attr_content);
+      printf("getting file attr and content from file server with lid = %d\n", lid);
     }
-    status = -1;
-    while (status != extent_protocol::OK) {
-      status = ec->get(lid, content);
-      printf("getting file from file server with lid = %d\n", lid);
-    }
+    printf("control flow reaches after ec->getattr_content in acquire");
+    content = attr_content.content;
+    attributes = attr_content.a;
     local_file_cache_entry* entry = NULL;
     entry = cache->getCache(lid);
     printf("control flow reaches after cache->getCache\n");
@@ -135,7 +139,7 @@ lock_client_cache::acquire(lock_protocol::lockid_t lid)
   }
     printf("control flow reaches before pthread_mutex_unlock(&lock_client_mutex)\n");
     pthread_mutex_unlock(&lock_client_mutex);
-    printf("control flow reaches after pthread_mutex_unlock(&lock_client_mutex)\n");
+    printf("control flow reaches after pthread_mutex_unlock(&lock_client_mutex), returns from acquire\n");
     return lock_protocol::OK;
   }
 
